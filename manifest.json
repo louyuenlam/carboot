@@ -2,7 +2,7 @@
   "name": "Car Boot Sale Tracker",
   "short_name": "Car Boot",
   "description": "Track items sold at car boot sales",
-  "start_url": "./CarBoot.html",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#fdf6e3",
   "theme_color": "#fdf6e3",
