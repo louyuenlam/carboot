@@ -114,17 +114,57 @@
     padding: 2px 10px;
     font-weight: 500;
   }
+  .event-switcher {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+    align-items: stretch;
+  }
+  .event-switcher select {
+    flex: 1;
+    background: var(--bg);
+    border: 2px solid var(--ink);
+    padding: 10px 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%231a1208' d='M0 0l6 8 6-8z'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+    cursor: pointer;
+  }
+  .btn-new-event {
+    background: var(--accent);
+    color: white;
+    border: 2px solid var(--ink);
+    padding: 8px 14px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    cursor: pointer;
+    box-shadow: 3px 3px 0 var(--ink);
+    -webkit-appearance: none;
+    border-radius: 0;
+    flex-shrink: 0;
+  }
+  .btn-new-event:active { transform: translate(1px,1px); box-shadow: 1px 1px 0 var(--ink); }
   .event-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1.5fr 1fr;
     gap: 14px;
     align-items: end;
+    margin-bottom: 12px;
   }
   .venue-chips {
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
-    margin-bottom: 6px;
   }
   .venue-chip {
     background: transparent;
@@ -379,7 +419,8 @@
   .table-wrap { display: none !important; }
   .mobile-cards { display: block !important; }
   .form-grid { grid-template-columns: 1fr 1fr; }
-  .event-grid { grid-template-columns: 1fr; }
+  .event-grid { grid-template-columns: 1fr 1fr; }
+  .event-grid .field:first-child { grid-column: 1 / -1; }
   .stat-box { min-width: 100px; }
 </style>
 </head>
@@ -389,14 +430,17 @@
     <h1>Sale <span>Tracker</span></h1>
   </header>
 
-  <!-- EVENT (location + entry fee) -->
+  <!-- EVENT (switcher + date + venue + entry fee) -->
   <div class="event-card">
-    <div class="venue-chips" id="venueChips">
-      <button type="button" class="venue-chip" data-venue="Marsh Lane">MARSH LANE</button>
-      <button type="button" class="venue-chip" data-venue="Bowshaw">BOWSHAW</button>
-      <button type="button" class="venue-chip" data-venue="Steamworks">STEAMWORKS</button>
+    <div class="event-switcher">
+      <select id="eventSelect" aria-label="Select event"></select>
+      <button type="button" class="btn-new-event" onclick="newEvent()">＋ NEW</button>
     </div>
     <div class="event-grid">
+      <div class="field">
+        <label>Date</label>
+        <input id="iDate" type="date">
+      </div>
       <div class="field">
         <label>Location</label>
         <input id="iVenue" type="text" placeholder="e.g. Marsh Lane" autocomplete="off" autocorrect="off">
@@ -405,6 +449,11 @@
         <label>Entry Fee (£)</label>
         <input id="iEntry" type="number" min="0" step="0.01" placeholder="0.00" inputmode="decimal">
       </div>
+    </div>
+    <div class="venue-chips" id="venueChips">
+      <button type="button" class="venue-chip" data-venue="Marsh Lane">MARSH LANE</button>
+      <button type="button" class="venue-chip" data-venue="Bowshaw">BOWSHAW</button>
+      <button type="button" class="venue-chip" data-venue="Steamworks">STEAMWORKS</button>
     </div>
   </div>
 
@@ -507,7 +556,7 @@
 
   <!-- EXPORT -->
   <div class="export-row">
-    <button class="btn-clear" onclick="clearAll()">CLEAR ALL</button>
+    <button class="btn-clear" onclick="deleteEvent()">🗑 DELETE EVENT</button>
     <button class="btn-export" id="exportBtn" onclick="exportXLSX()" disabled>⬇ EXPORT TO EXCEL</button>
   </div>
 </div>
@@ -521,16 +570,23 @@
 <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
 
 <script>
+  // ── STATE ──
   let sales = [], idCounter = 0, editingId = null;
-  let venue = '', entryFee = 0;
+  let date = '', venue = '', entryFee = 0;
+  let currentEventId = '';   // sheet tab name, e.g. "28 Apr 2026 Bowshaw"
+  let eventList = [];        // [{ id, date, venue, entryFee, total }, ...]
+  let metaSaveTimer = null;  // debounce timer for meta updates
 
   // ── GOOGLE SHEETS CONFIG ──
-  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz0EvkMkrdxPEztw7RUnOj93wPjhTRPt-Gz8TViIdp1cD6AMg_0unpAZf7L38XqfGCZ/exec'; // ← paste your deployed web app URL
-  const TAB = 'carboot';
+  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz0EvkMkrdxPEztw7RUnOj93wPjhTRPt-Gz8TViIdp1cD6AMg_0unpAZf7L38XqfGCZ/exec';
+
+  function isLinked() {
+    return !!SCRIPT_URL && SCRIPT_URL.indexOf('/exec') !== -1;
+  }
 
   // ── LOCAL STORAGE (fallback) ──
   function saveLocal() {
-    const payload = JSON.stringify({ sales, counter: idCounter, venue, entryFee });
+    const payload = JSON.stringify({ sales, counter: idCounter, date, venue, entryFee, currentEventId });
     try { localStorage.setItem('cb', payload); } catch(e) {}
     try {
       const exp = new Date(Date.now() + 7*24*60*60*1000).toUTCString();
@@ -563,60 +619,94 @@
 
   // ── SHEETS SYNC ──
   async function sheetsPost(body) {
-    if (!SCRIPT_URL || SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') return { skipped: true };
+    if (!isLinked()) return { skipped: true };
     try {
       const res = await fetch(SCRIPT_URL, {
         method: 'POST', redirect: 'follow',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ tab: TAB, venue, entryFee, ...body })
+        body: JSON.stringify(body)
       });
       return await res.json();
     } catch(e) { return { error: e.message }; }
   }
 
-  async function sheetAdd(sale)    { await sheetsPost({ action: 'add', sale }); }
-  async function sheetSave()       { await sheetsPost({ action: 'save', sales }); }
-  async function sheetDelete(id)   { await sheetsPost({ action: 'delete', id }); }
-  async function sheetEvent()      { await sheetsPost({ action: 'event' }); }
+  async function sheetsGet(qs) {
+    if (!isLinked()) return null;
+    try {
+      const res = await fetch(`${SCRIPT_URL}?${qs}`, { redirect: 'follow' });
+      return await res.json();
+    } catch(e) { return null; }
+  }
 
-  // ── COMBINED SAVE ──
+  // Helpers wrap currentEventId + meta into each request
+  function withEvent(extra) {
+    return { event: currentEventId, date, venue, entryFee, ...extra };
+  }
+  async function sheetAdd(sale)   { const r = await sheetsPost(withEvent({ action: 'add', sale })); applyServerEventId(r); return r; }
+  async function sheetSave()      { const r = await sheetsPost(withEvent({ action: 'save', sales })); applyServerEventId(r); return r; }
+  async function sheetDelete(id)  { const r = await sheetsPost(withEvent({ action: 'delete', id })); applyServerEventId(r); return r; }
+  async function sheetMeta()      { const r = await sheetsPost(withEvent({ action: 'event' })); applyServerEventId(r); return r; }
+  async function sheetCreate()    { return await sheetsPost({ action: 'create', date, venue, entryFee }); }
+  async function sheetRemove(id)  { return await sheetsPost({ action: 'remove', event: id }); }
+
+  // If the server renamed our tab (because date/venue changed), update local state
+  function applyServerEventId(res) {
+    if (res && res.eventId && res.eventId !== currentEventId) {
+      currentEventId = res.eventId;
+      saveLocal();
+      refreshEventList();
+    }
+  }
+
+  // ── COMBINED SAVE (debounce meta updates) ──
   function saveAll(action, extra) {
     saveLocal();
+    if (!currentEventId) return;
     if (action === 'add')         sheetAdd(extra);
     else if (action === 'delete') sheetDelete(extra);
+    else if (action === 'meta')   { clearTimeout(metaSaveTimer); metaSaveTimer = setTimeout(sheetMeta, 600); }
     else                          sheetSave();
   }
 
-  // ── LOAD: Sheets first, local fallback ──
+  // ── LOAD ──
   async function loadAll() {
     showSpinner(true);
-    let loaded = false;
 
-    if (SCRIPT_URL && SCRIPT_URL !== 'YOUR_APPS_SCRIPT_URL_HERE') {
+    // Restore last-used event from local storage first (snappy UX)
+    const payload = loadLocal();
+    if (payload) {
       try {
-        const res = await fetch(`${SCRIPT_URL}?tab=${TAB}`, { redirect: 'follow' });
-        const data = await res.json();
-        if (data.sales) {
-          sales = data.sales;
-          idCounter = data.counter || 0;
-          venue = data.venue || '';
-          entryFee = Number(data.entryFee) || 0;
-          saveLocal();
-          loaded = true;
-        }
+        const parsed = JSON.parse(payload);
+        sales = parsed.sales || [];
+        idCounter = parsed.counter || 0;
+        date = parsed.date || todayISO();
+        venue = parsed.venue || '';
+        entryFee = Number(parsed.entryFee) || 0;
+        currentEventId = parsed.currentEventId || '';
       } catch(e) {}
     }
+    if (!date) date = todayISO();
 
-    if (!loaded) {
-      const payload = loadLocal();
-      if (payload) {
-        try {
-          const parsed = JSON.parse(payload);
-          sales = parsed.sales || [];
-          idCounter = parsed.counter || 0;
-          venue = parsed.venue || '';
-          entryFee = Number(parsed.entryFee) || 0;
-        } catch(e) {}
+    // Fetch events list from Sheets
+    if (isLinked()) {
+      const data = await sheetsGet('action=list');
+      if (data && data.events) {
+        eventList = data.events;
+        renderEventSelect();
+
+        // If we have no current event, or it no longer exists on server, pick newest or create
+        if (!currentEventId || !eventList.find(e => e.id === currentEventId)) {
+          if (eventList.length) {
+            currentEventId = eventList[0].id;
+            await loadEvent(currentEventId);
+          } else {
+            // No events at all — create one for today
+            await createNewEvent({ silent: true });
+          }
+        } else {
+          // Refresh current event from server
+          await loadEvent(currentEventId);
+        }
       }
     }
 
@@ -626,19 +716,132 @@
     updateStats();
   }
 
+  async function loadEvent(eventId) {
+    if (!eventId) return;
+    const data = await sheetsGet(`action=load&event=${encodeURIComponent(eventId)}`);
+    if (data && !data.error) {
+      currentEventId = data.id || eventId;
+      sales = data.sales || [];
+      idCounter = data.counter || 0;
+      date = data.date || todayISO();
+      venue = data.venue || '';
+      entryFee = Number(data.entryFee) || 0;
+      saveLocal();
+    }
+  }
+
+  async function refreshEventList() {
+    if (!isLinked()) return;
+    const data = await sheetsGet('action=list');
+    if (data && data.events) {
+      eventList = data.events;
+      renderEventSelect();
+    }
+  }
+
   function showSpinner(show) {
     let el = document.getElementById('loadingSpinner');
     if (!el) return;
     el.style.display = show ? 'flex' : 'none';
   }
 
+  function todayISO() {
+    const d = new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  }
+
   loadAll();
 
-  // ── EVENT (location + entry fee) ──
+  // ── EVENT SWITCHER ──
+  function renderEventSelect() {
+    const sel = document.getElementById('eventSelect');
+    sel.innerHTML = '';
+    if (!eventList.length) {
+      const opt = document.createElement('option');
+      opt.value = ''; opt.textContent = 'No events yet';
+      sel.appendChild(opt);
+      return;
+    }
+    eventList.forEach(ev => {
+      const opt = document.createElement('option');
+      opt.value = ev.id;
+      opt.textContent = ev.id + ' — £' + (ev.total || 0).toFixed(2);
+      if (ev.id === currentEventId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+
+  document.getElementById('eventSelect').addEventListener('change', async (e) => {
+    const id = e.target.value;
+    if (!id || id === currentEventId) return;
+    showSpinner(true);
+    await loadEvent(id);
+    showSpinner(false);
+    applyEventToUI();
+    renderAll();
+    updateStats();
+    showToast('✓ Switched to ' + id);
+  });
+
+  async function newEvent() {
+    await createNewEvent();
+  }
+
+  async function createNewEvent(opts) {
+    opts = opts || {};
+    // Reset to today's defaults
+    date = todayISO();
+    venue = '';
+    entryFee = 0;
+    sales = [];
+    idCounter = 0;
+    currentEventId = '';
+
+    if (isLinked()) {
+      const r = await sheetCreate();
+      if (r && r.eventId) {
+        currentEventId = r.eventId;
+        await refreshEventList();
+      }
+    }
+    saveLocal();
+    applyEventToUI();
+    renderAll();
+    updateStats();
+    if (!opts.silent) showToast('✓ New event started');
+  }
+
+  async function deleteEvent() {
+    if (!currentEventId) return;
+    if (!confirm(`Delete event "${currentEventId}"?\nThis removes the entire tab from Google Sheets.`)) return;
+    const removingId = currentEventId;
+    if (isLinked()) await sheetRemove(removingId);
+    eventList = eventList.filter(e => e.id !== removingId);
+    if (eventList.length) {
+      // Switch to newest remaining
+      await loadEvent(eventList[0].id);
+    } else {
+      // No events left — start fresh
+      await createNewEvent({ silent: true });
+    }
+    await refreshEventList();
+    applyEventToUI();
+    renderAll();
+    updateStats();
+    showToast('✓ Event deleted');
+  }
+
+  // ── EVENT (date + location + entry fee) ──
   function applyEventToUI() {
+    document.getElementById('iDate').value  = date || todayISO();
     document.getElementById('iVenue').value = venue;
     document.getElementById('iEntry').value = entryFee ? entryFee : '';
     refreshChips();
+    // Make sure the event-select shows the current selection
+    const sel = document.getElementById('eventSelect');
+    if (sel && sel.value !== currentEventId) sel.value = currentEventId;
   }
   function refreshChips() {
     document.querySelectorAll('.venue-chip').forEach(b => {
@@ -650,22 +853,25 @@
       venue = btn.dataset.venue;
       document.getElementById('iVenue').value = venue;
       refreshChips();
-      saveLocal();
-      sheetEvent();
+      saveAll('meta');
     });
+  });
+  document.getElementById('iDate').addEventListener('change', e => {
+    date = e.target.value;
+    saveAll('meta');
   });
   document.getElementById('iVenue').addEventListener('input', e => {
     venue = e.target.value.trim();
     refreshChips();
   });
-  document.getElementById('iVenue').addEventListener('change', () => { saveLocal(); sheetEvent(); });
-  document.getElementById('iVenue').addEventListener('blur',   () => { saveLocal(); sheetEvent(); });
+  document.getElementById('iVenue').addEventListener('change', () => { saveAll('meta'); });
+  document.getElementById('iVenue').addEventListener('blur',   () => { saveAll('meta'); });
   document.getElementById('iEntry').addEventListener('input', e => {
     entryFee = parseFloat(e.target.value) || 0;
     updateStats();
   });
-  document.getElementById('iEntry').addEventListener('change', () => { saveLocal(); sheetEvent(); });
-  document.getElementById('iEntry').addEventListener('blur',   () => { saveLocal(); sheetEvent(); });
+  document.getElementById('iEntry').addEventListener('change', () => { saveAll('meta'); });
+  document.getElementById('iEntry').addEventListener('blur',   () => { saveAll('meta'); });
 
   // ── FORM INPUTS ──
   ['iPrice','iQty','iSold'].forEach(id => document.getElementById(id).addEventListener('input', updatePreview));
@@ -803,18 +1009,6 @@
     netEl.style.color = net < 0 ? 'var(--accent)' : 'var(--green)';
   }
 
-  // ── CLEAR ALL ──
-  function clearAll() {
-    if (!sales.length && !venue && !entryFee) return;
-    if (!confirm('Clear all sales records (and reset event)?')) return;
-    sales = [];
-    venue = '';
-    entryFee = 0;
-    applyEventToUI();
-    saveAll('clear'); renderAll(); updateStats();
-    showToast('All records cleared.');
-  }
-
   // ── EDIT MODAL ──
   function openEdit(id) {
     const s = sales.find(x => x.id === id);
@@ -861,14 +1055,16 @@
   // ── EXPORT ──
   function exportXLSX() {
     if (!sales.length) return;
-    const dateStr = new Date().toLocaleDateString('en-GB').replace(/\//g,'-');
+    // Use the event's date if set, otherwise today
+    const eventDate = date || todayISO();
+    const dateStr = eventDate.split('-').reverse().join('-'); // YYYY-MM-DD → DD-MM-YYYY
     const fee = parseFloat(entryFee) || 0;
     const grossTotal = parseFloat(sales.reduce((a,s)=>a+s.total,0).toFixed(2));
     const netTotal   = parseFloat((grossTotal - fee).toFixed(2));
 
     const rows = [];
-    // Header rows: venue + entry fee
-    rows.push({ '#': 'LOCATION', 'Item Name': venue || '—', 'Price per Unit (£)':'', 'Price Sold (£)':'', 'Quantity':'', 'Total Price (£)':'', 'Time':'' });
+    rows.push({ '#': 'DATE',      'Item Name': dateStr, 'Price per Unit (£)':'', 'Price Sold (£)':'', 'Quantity':'', 'Total Price (£)':'', 'Time':'' });
+    rows.push({ '#': 'LOCATION',  'Item Name': venue || '—', 'Price per Unit (£)':'', 'Price Sold (£)':'', 'Quantity':'', 'Total Price (£)':'', 'Time':'' });
     rows.push({ '#': 'ENTRY FEE', 'Item Name':'', 'Price per Unit (£)':'', 'Price Sold (£)':'', 'Quantity':'', 'Total Price (£)': fee, 'Time':'' });
     rows.push({ '#': '', 'Item Name':'', 'Price per Unit (£)':'', 'Price Sold (£)':'', 'Quantity':'', 'Total Price (£)':'', 'Time':'' });
 
@@ -888,9 +1084,12 @@
     const ws = XLSX.utils.json_to_sheet(rows);
     ws['!cols'] = [{ wch:10 },{ wch:28 },{ wch:18 },{ wch:16 },{ wch:10 },{ wch:18 },{ wch:8 }];
     const wb = XLSX.utils.book_new();
-    const tabName = (venue ? venue + ' ' : 'Car Boot ') + dateStr;
-    XLSX.utils.book_append_sheet(wb, ws, tabName.slice(0,31));
-    const fileName = (venue ? venue.toLowerCase().replace(/\s+/g,'-') + '-' : 'car-boot-') + dateStr + '.xlsx';
+    const tabName = (currentEventId || (venue + ' ' + dateStr)).slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, tabName);
+    const fileName = (currentEventId
+      ? currentEventId.toLowerCase().replace(/\s+/g,'-')
+      : (venue ? venue.toLowerCase().replace(/\s+/g,'-') + '-' + dateStr : 'car-boot-' + dateStr)
+    ) + '.xlsx';
     XLSX.writeFile(wb, fileName);
     showToast('✓ Excel file downloaded!');
   }
