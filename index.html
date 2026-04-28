@@ -119,14 +119,18 @@
     gap: 10px;
     margin-bottom: 14px;
     align-items: stretch;
+    width: 100%;
+    min-width: 0;
   }
   .event-switcher select {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;             /* lets the flex item actually shrink */
+    width: 100%;
     background: var(--bg);
     border: 2px solid var(--ink);
     padding: 10px 12px;
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--ink);
     -webkit-appearance: none;
@@ -134,24 +138,28 @@
     border-radius: 0;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%231a1208' d='M0 0l6 8 6-8z'/></svg>");
     background-repeat: no-repeat;
-    background-position: right 12px center;
-    padding-right: 32px;
+    background-position: right 10px center;
+    padding-right: 28px;
     cursor: pointer;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
   }
   .btn-new-event {
     background: var(--accent);
     color: white;
     border: 2px solid var(--ink);
-    padding: 8px 14px;
+    padding: 8px 12px;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
     font-weight: 500;
-    letter-spacing: 2px;
+    letter-spacing: 1.5px;
     cursor: pointer;
     box-shadow: 3px 3px 0 var(--ink);
     -webkit-appearance: none;
     border-radius: 0;
     flex-shrink: 0;
+    white-space: nowrap;
   }
   .btn-new-event:active { transform: translate(1px,1px); box-shadow: 1px 1px 0 var(--ink); }
   .event-grid {
